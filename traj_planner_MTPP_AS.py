@@ -13,6 +13,8 @@ import numpy as np
 
 
 class Node:
+    
+    LARGE_NUMBER = 9999999
 
     def __init__(self, state):
         '''
@@ -22,12 +24,11 @@ class Node:
         tree: index of tree that the node is associated with
         node_type: type of node, can be uninitialized, empty, obstacle, chaser, evader
         '''
-
         self.state = state
         self.parent_node = None
         self.g_cost = 0
         self.h_cost = 0
-        self.f_cost = 0 
+        self.f_cost = self.LARGE_NUMBER
         self.tree = None
         self.in_tree = False
         self.type = 'uninitialized'
@@ -42,32 +43,34 @@ class Node:
         return math.sqrt((self.state[1] - state[1]) ** 2 + (self.state[2] - state[2]) ** 2)
     
     def set_obstacle(self):
-        pass
+        self.type = 'obstacle'
     
-    def set_empty(self, parent_node, evader_state, tree):
+    def set_empty(self):
         self.type = 'empty'
-        if not self.in_tree:
-            self.parent_node = parent_node
-            if parent_node is not None:
-                self.g_cost = parent_node.g_cost + parent_node.manhattan_distance_to_state(state)
-            else:
-                self.g_cost = 0
-            self.h_cost = self.euclidean_distance_to_state(self, evader_state)
-            self.f_cost = g_cost + h_cost
-            self.tree = tree
-            self.in_tree = False
 
     def set_chaser(self):
         self.type = 'chaser'
 
     def set_evader(self):
         self.type = 'evader'
+    
+    def update_node(self, parent_node, chaser_state, tree):
+        self.parent_node = parent_node
+        if parent_node is not None:
+            self.g_cost = parent_node.g_cost + 1#parent_node.manhattan_distance_to_state(self.state)
+        else:
+            self.g_cost = 1
+        self.h_cost = self.euclidean_distance_to_state(chaser_state)
+        self.f_cost = self.g_cost + self.h_cost
+        self.tree = tree
+        self.in_tree = True
+    
 
 
 class MTPP:
     DIST_TO_GOAL_THRESHOLD = 0.5  # m
     CHILDREN_DELTAS = [-0.5, -0.25, 0.0, 0.25, 0.5]
-    DISTANCE_DELTA = 1.5  # m
+    DISTANCE_DELTA = 1  # m
     EDGE_TIME = 2  # s
     LARGE_NUMBER = 9999999
     N = 10
@@ -79,12 +82,13 @@ class MTPP:
         '''
         grid: empty NxN array of uninitialized nodes
         '''
-        grid = np.zeros((N, N))
-        for i in range(N):
-            for j in range(N):
-                state = [0, i, j]
-                unmapped_node[i][j] = Node(state) #TODO: change to list comp
-
+        grid = [[Node([0, i, j]) for i in range(self.N)] for j in range(self.N)]
+        # grid = np.zeros((self.N, self.N))
+        # for i in range(self.N):
+        #     for j in range(self.N):
+        #         state = [0, i, j]
+        #         grid[i][j] = Node(state) #TODO: change to list comp
+    
         return grid
 
     def initial_path_finding(self, chaser_state, evader_state):
@@ -93,51 +97,40 @@ class MTPP:
             Returns:
               traj (list of lists): A list of trajectory points with time, X, Y, Theta (s, m, m, rad).
         """
+        print(chaser_state)
         self.chaser_state = chaser_state
         self.evader_state = evader_state
         self.tree_roots = []
         self.open_set = []
+        self.leaf_set = []
         self.path_found = False
 
         # initial path finding
-        tree_count = 0
+        self.tree_count = 0
         node_list = self.get_available_nodes(evader_state)
 
         for node in node_list:
-            if node.type = 'evader':
-                node.set_empty(None, evader_state, tree_count)
+            if node.type == 'chaser': #TODO: fix edgecase
+                node.update_node(None, chaser_state, self.tree_count)
+                self.open_set.clear()
                 return self.build_traj(node)
-            node.set_empty(None, evader_state, tree_count)
+
+            node.set_empty()
+            node.update_node(None, chaser_state, self.tree_count)
             self.tree_roots.append(node)
             self.open_set.append(node)
+            self.tree_count += 1
 
-        while not self.path_found:
-            
+        while True:
             if len(self.open_set) == 0:
                 print("Error: Initial path not found")
-
             priority_node = self.get_highest_priority_node()
-            self.expand_node(priority_node)
+            self.tree_count = priority_node.tree
+            node = self.expand_node(priority_node)
+            if self.path_found:
+                self.open_set.clear()
+                return self.build_traj(node)
 
-
-
-        # loop to find goal
-        while True:
-            # get the top node, then expand it
-            current_node = self.get_best_node_on_fringe()
-            print(
-                f'x: {current_node.state[1]}, y: {current_node.state[2]}, desired state: {desired_state}, fcost: {current_node.f_cost}, hcost: {current_node.h_cost}')
-            # check to see if it connects to the goal
-            traj, traj_distance = construct_dubins_traj(current_node.state, self.desired_state)
-            if not collision_found(traj, self.objects, self.walls):
-                # if it connects, yay! build and return the traj.
-                goal_node = self.generate_goal_node(current_node, self.desired_state)
-                return self.build_traj(goal_node)
-            else:
-                # if it doesn't connect, add the children and keep going
-                children_list = self.get_children(current_node)
-                for child in children_list:
-                    self.add_to_fringe(child)
 
     def get_available_nodes(self, state_to_expand):
         '''
@@ -149,10 +142,10 @@ class MTPP:
                 state = copy.deepcopy(state_to_expand)
                 state[i] = state[i] + delta
                 # checks for wall
-                if abs(state[i])>=N:
+                if abs(state[i])>=self.N:
                     break
                 # check for obstacles
-                node = self.grid[state[1],state[2]]
+                node = self.grid[int(state[1])][int(state[2])]
                 if node.type != 'obstacle':
                     node_list.append(node)
         return node_list
@@ -161,94 +154,35 @@ class MTPP:
         '''
         "pops" a node from the open set based on priority
         '''
-        list_min = min(self.open_set, key=operator.attrgetter('h_cost')) # TODO: check if we should use f_cost instead
+        list_min = min(self.open_set, key=operator.attrgetter('f_cost')) # TODO: check if we should use f_cost instead
         priority_node = copy.deepcopy(list_min)
         self.open_set.remove(list_min) 
         return priority_node 
     
-    def expand_node(self, node):
+    def expand_node(self, node_to_expand):
         '''
         expands node by adding appropriate nodes to the open and leaf set
         '''
-        node_list = self.get_available_nodes(node.state)
+        node_list = self.get_available_nodes(node_to_expand.state)
         for node in node_list:
-            if :#cost of surrounding node > cost of node + movemen
+            temp_cost = node_to_expand.g_cost + node_to_expand.manhattan_distance_to_state(node.state) + node.euclidean_distance_to_state(self.chaser_state)
+            if node.type == 'chaser':
+                print("found chaser at", node.state)
+                node.update_node(node_to_expand, self.chaser_state, self.tree_count)
+                self.path_found = True
+                return node
+            elif node.f_cost > temp_cost:
+                if node.type != 'evader':
+                    node.set_empty()
+                node.update_node(node_to_expand, self.chaser_state, self.tree_count)
+                self.open_set.append(node)
+                if node in (self.leaf_set):
+                    self.leaf_set.remove(node)
+            if node.f_cost < temp_cost and node.tree!=node_to_expand.tree:
+                self.leaf_set.append(node)
+                if node_to_expand not in self.leaf_set:
+                    self.leaf_set.append(node_to_expand)
 
-
-
-    def add_to_fringe(self, node):
-        """
-        Takes a node and adds it to the fringe (unexplored nodes)
-        """
-
-        if not self.fringe:
-            # if there's nothing in the fringe, add the node
-            self.fringe.append(node)
-        elif node.f_cost > self.fringe[-1].f_cost:
-            # if the node's cost is higher than everything else, just add it
-            self.fringe.append(node)
-        else:
-            ind = 0
-            while ind < len(self.fringe):
-                if node.f_cost < self.fringe[ind].f_cost:
-                    self.fringe.insert(ind, node)
-                    return
-                ind += 1
-        pass
-
-    def get_best_node_on_fringe(self):
-        return self.fringe.pop(0)
-
-    def get_children(self, node_to_expand: Node):
-
-        parent_state = node_to_expand.state
-        children_list = []
-        for i in range(1, 3):
-            for delta in [self.DISTANCE_DELTA, -self.DISTANCE_DELTA]:
-                child_state = copy.deepcopy(parent_state)
-                child_state[i] = child_state[i] + delta
-
-                traj, traj_distance = construct_dubins_traj(parent_state, child_state)
-                if not collision_found(traj, self.objects, self.walls) and child.state[1:4] != child.parent_node.state[
-                                                                                               1:4]:
-                    if self.grid[int(child.state[1]), int(child.state[2])] != 0:
-                        child = Node(child_state, node_to_expand, self.desired_state, node_to_expand.tree)
-                    else:
-                        child = self.grid[int(child.state[1]), int(child.state[2])]
-
-                    self.grid[int(child.state[1]), int(child.state[2])] = child
-                    children_list.append(child)
-
-        return children_list
-
-    def generate_goal_node(self, node: Node, desired_state):
-        """
-         Another recommendation is to calculate a node's connection to the desired state with a generate_goal_node function
-         that calculates a dubins traj between a node and the desired state. If this traj is collision free, the goal node
-         should be created and returned so that the full trajectory can be built and returned. Note that you should only
-         check for connections with a goal AFTER popping a node from the fringe (to ensure a form of optimality).
-        """
-        return self.create_node(desired_state, node)
-
-    def create_node(self, state, parent_node: Node):
-
-        # c(parent,n)
-        c = self.calculate_edge_distance(state, parent_node)
-        # g(n) is g(parent) + c(parent,n)
-        g_cost = parent_node.g_cost + c
-        # h is calculated as normal
-        h_cost = self.estimate_cost_to_goal(state)
-
-        return Node(state, parent_node, g_cost, h_cost)
-
-    def create_initial_node(self, state):
-
-        # it costs nothing to get to the start
-        g_cost = 0
-        # h is calculated as normal
-        h_cost = self.estimate_cost_to_goal(state)
-
-        return Node(state, None, g_cost, h_cost)
 
     def calculate_edge_distance(self, state, parent_node: Node):
         """
@@ -262,31 +196,35 @@ class MTPP:
 
         return MTPP.LARGE_NUMBER
 
-    def estimate_cost_to_goal(self, state):
-        return math.sqrt((self.desired_state[1] - state[1]) ** 2 + (self.desired_state[2] - state[2]) ** 2)
-
     def build_traj(self, goal_node):
 
         node_list = []
         node_to_add = goal_node
         while node_to_add != None:
+            print(f'x: {node_to_add.state[1]}, y: {node_to_add.state[2]}, fcost: {node_to_add.f_cost}, gcost: {node_to_add.g_cost}, hcost: {node_to_add.h_cost}')
             node_list.insert(0, node_to_add)
             node_to_add = node_to_add.parent_node
 
+        node_list.reverse()
+
         traj = []
         parent_time = None
+        traj_point_0 = [0, 0, 0, 0]
+        traj_point_1 = [0, 0, 0, 0]
         for i in range(1, len(node_list)):
             node_A = node_list[i - 1]
             node_B = node_list[i]
-            traj_point_0 = node_A.state
-            traj_point_1 = node_B.state
+            traj_point_0[3] = traj_point_1[3]
+            traj_point_0[0:3] = node_A.state
+            traj_point_1[0:3] = node_B.state
             traj_point_1[3] = math.atan2(traj_point_1[2] - traj_point_0[2], traj_point_1[1] - traj_point_0[1])
             if len(traj) > 0:
                 parent_time = traj[-1][0]
             edge_traj, edge_traj_distance = construct_dubins_traj(traj_point_0, traj_point_1, parent_time=parent_time)
             traj = traj + edge_traj
-        # print("TEST:", edge_traj)
         return traj
+
+        #TODO: add final step to evader
 
     def collision_found(self, node_1, node_2):
         """ Return true if there is a collision with the traj between 2 nodes and the workspace
@@ -301,15 +239,6 @@ class MTPP:
         traj, traj_distance = construct_dubins_traj(node_1.state, node_2.state)
         return collision_found(traj, self.objects, self.walls)
 
-    def expand_nodes(self, node_to_expand: Node):
-
-        pass
-
-    def get_roots(self):
-        pass
-
-    def build_subtrees(self):
-        pass
 
 class CostClass:
 
@@ -321,21 +250,32 @@ class CostClass:
 if __name__ == '__main__':
     # for i in range(0, 5):
     planner = MTPP()
-    chaser_state = [0, -8, -8]
-    planner.grid[chaser_state[1], chaser_state[2]].set_chaser()
+    chaser_state = [0, 1, 1]
+    print(chaser_state[1], chaser_state[2])
+    planner.grid[chaser_state[1]][chaser_state[2]].set_chaser()
     evader_state = [0, 8, 8]
-    planner.grid[evader_state[1], evader_state[2]].set_evader()
+    planner.grid[evader_state[1]][evader_state[2]].set_evader()
+    # tp1 = [300, random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0]
+
+    # initial path finding
     initial_path = planner.initial_path_finding(chaser_state, evader_state)
 
+    maxR = 10
+    walls = [[-maxR, maxR, maxR, maxR, 2 * maxR], [maxR, maxR, maxR, -maxR, 2 * maxR],
+                [maxR, -maxR, -maxR, -maxR, 2 * maxR], [-maxR, -maxR, -maxR, maxR, 2 * maxR]]
+    
+    objects = []
+    if len(initial_path) > 0:
+        plot_traj(initial_path, initial_path, objects, walls)
+    
+    # begin moving robot
 
-    # maxR = 10
-    # tp1 = [300, random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0]
-    # walls = [[-maxR, maxR, maxR, maxR, 2 * maxR], [maxR, maxR, maxR, -maxR, 2 * maxR],
-    #             [maxR, -maxR, -maxR, -maxR, 2 * maxR], [-maxR, -maxR, -maxR, maxR, 2 * maxR]]
+    
+
     # objects = []
     # num_objects = 25
     # #TODO: add obstacles
-    # objects = []
+
     # for j in range(0, num_objects):
     #     obj = [random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0.5]
     #     while (abs(obj[0] - tp0[1]) < 1 and abs(obj[1] - tp0[2]) < 1) or (
@@ -343,6 +283,6 @@ if __name__ == '__main__':
     #         obj = [random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0.5]
     #     objects.append(obj)
     
-    if len(initial_path) > 0:
-        plot_initial_path()
-        #plot_traj(traj, traj, objects, walls)
+    # if len(initial_path) > 0:
+    #     plot_initial_path(traj, traj, objects, walls)
+    #     #plot_traj(traj, traj, objects, walls)

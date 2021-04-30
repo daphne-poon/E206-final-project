@@ -40,26 +40,26 @@ def construct_dubins_traj(traj_point_0, traj_point_1, parent_time = None):
   """
   q0 = (traj_point_0[1], traj_point_0[2], traj_point_0[3])
   q1 = (traj_point_1[1], traj_point_1[2], traj_point_1[3])
-  turning_radius = 0.6
+  turning_radius = 0.1
   
   path = dubins.shortest_path(q0, q1, turning_radius)
   configurations, distances = path.sample_many(DISTANCE_STEP_SIZE)
   
   traj_distance = distances[-1]
   traj_time = traj_point_1[0] - traj_point_0[0]
-  time_step_size = traj_time/len(distances)
+  time_step_size = 0.1#traj_time/len(distances)
   
   traj = []
   traj_point_time = traj_point_0[0]
+  if parent_time is not None:
+    traj_point_time += parent_time
   for c in configurations:
-    # if parent_time is not None:
-    #   traj_point_time += parent_time
     traj_point = [traj_point_time, c[0], c[1], c[2]]
     traj.append(traj_point)
     traj_point_time += time_step_size
 
   # for point in traj:
-    # print(point[0])
+  #   print(point)
   return traj, traj_distance
 
 def plot_traj(traj_desired, traj_actual, objects, walls):
@@ -72,6 +72,7 @@ def plot_traj(traj_desired, traj_actual, objects, walls):
   """
   fig, axis_array = plt.subplots(2,1)
   time_stamp_desired = []
+  
   x_desired = []
   y_desired = []
   theta_desired = []
@@ -84,15 +85,16 @@ def plot_traj(traj_desired, traj_actual, objects, walls):
   axis_array[0].plot(x_desired[0], y_desired[0], 'ko')
   axis_array[0].plot(x_desired[-1], y_desired[-1], 'kx')
   time_stamp_actual = []
-  x_actual = []
-  y_actual = []
-  theta_actual = []
-  for tp in traj_actual:
-    time_stamp_actual.append(tp[0])
-    x_actual.append(tp[1])
-    y_actual.append(tp[2])
-    theta_actual.append(angle_diff(tp[3]))
-  axis_array[0].plot(x_actual, y_actual, 'k')
+  
+  # x_actual = []
+  # y_actual = []
+  # theta_actual = []
+  # for tp in traj_actual:
+  #   time_stamp_actual.append(tp[0])
+  #   x_actual.append(tp[1])
+  #   y_actual.append(tp[2])
+  #   theta_actual.append(angle_diff(tp[3]))
+  # axis_array[0].plot(x_actual, y_actual, 'k')
 
   ang_res = 0.2
   for obj in objects:
@@ -118,11 +120,11 @@ def plot_traj(traj_desired, traj_actual, objects, walls):
   axis_array[1].plot(time_stamp_desired, x_desired,'b')
   axis_array[1].plot(time_stamp_desired, y_desired,'b--')
   axis_array[1].plot(time_stamp_desired, theta_desired,'b-.')
-  axis_array[1].plot(time_stamp_actual, x_actual,'k')
-  axis_array[1].plot(time_stamp_actual, y_actual,'k--')
-  axis_array[1].plot(time_stamp_actual, theta_actual,'k-.')
+  # axis_array[1].plot(time_stamp_actual, x_actual,'k')
+  # axis_array[1].plot(time_stamp_actual, y_actual,'k--')
+  # axis_array[1].plot(time_stamp_actual, theta_actual,'k-.')
   axis_array[1].set_xlabel('Time (s)')
-  axis_array[1].legend(['X Desired (m)', 'Y Desired (m)', 'Theta Desired (rad)', 'X (m)', 'Y (m)', 'Theta (rad)'])
+  axis_array[1].legend(['X Desired (m)', 'Y Desired (m)', 'Theta Desired (rad)'])#, 'X (m)', 'Y (m)', 'Theta (rad)']
 
   plt.show()
   
