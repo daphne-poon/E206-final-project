@@ -6,6 +6,7 @@ import copy
 import math
 import dubins
 import random
+import operator
 import matplotlib.pyplot as plt
 from traj_planner_utils import *
 import numpy as np
@@ -13,13 +14,23 @@ import numpy as np
 
 class Node:
 
-    def __init__(self, state, parent_node, desired_state, tree):
+    def __init__(self, state):
+        '''
+        state: array of state values, [time, x, y]
+        parent_node: node being expanded
+        desired_state: position to reach
+        tree: index of tree that the node is associated with
+        node_type: type of node, can be uninitialized, empty, obstacle, chaser, evader
+        '''
+
         self.state = state
-        self.parent_node = parent_node
-        self.g_cost = parent_node.g_cost + self.manhattan_distance_to_node(parent_node)
-        self.h_cost = self.manhattan_distance_to_state(desired_state)
-        self.f_cost = self.g_cost + self.h_cost  # cost
-        self.tree = tree
+        self.parent_node = None
+        self.g_cost = 0
+        self.h_cost = 0
+        self.f_cost = 0 
+        self.tree = None
+        self.in_tree = False
+        self.type = 'uninitialized'
 
     def manhattan_distance_to_node(self, node):
         return abs(self.state[1] - node.state[1]) + abs(self.state[2] - node.state[2])
@@ -29,6 +40,28 @@ class Node:
 
     def euclidean_distance_to_state(self, state):
         return math.sqrt((self.state[1] - state[1]) ** 2 + (self.state[2] - state[2]) ** 2)
+    
+    def set_obstacle(self):
+        pass
+    
+    def set_empty(self, parent_node, evader_state, tree):
+        self.type = 'empty'
+        if not self.in_tree:
+            self.parent_node = parent_node
+            if parent_node is not None:
+                self.g_cost = parent_node.g_cost + parent_node.manhattan_distance_to_state(state)
+            else:
+                self.g_cost = 0
+            self.h_cost = self.euclidean_distance_to_state(self, evader_state)
+            self.f_cost = g_cost + h_cost
+            self.tree = tree
+            self.in_tree = False
+
+    def set_chaser(self):
+        self.type = 'chaser'
+
+    def set_evader(self):
+        self.type = 'evader'
 
 
 class MTPP:
@@ -37,45 +70,56 @@ class MTPP:
     DISTANCE_DELTA = 1.5  # m
     EDGE_TIME = 2  # s
     LARGE_NUMBER = 9999999
+    N = 10
 
     def __init__(self):
-        self.fringe = []
+        self.grid = self.contruct_grid()
 
-    def construct_traj(self, initial_state, desired_state, objects, walls, grid_size):
+    def contruct_grid(self):
+        '''
+        grid: empty NxN array of uninitialized nodes
+        '''
+        grid = np.zeros((N, N))
+        for i in range(N):
+            for j in range(N):
+                state = [0, i, j]
+                unmapped_node[i][j] = Node(state) #TODO: change to list comp
+
+        return grid
+
+    def initial_path_finding(self, chaser_state, evader_state):
         """ Construct a trajectory in the X-Y space and in the time-X,Y,Theta space.
             Arguments:
-              traj_point_0 (list of floats): The trajectory's first trajectory point with time, X, Y, Theta (s, m, m, rad).
-              traj_point_1 (list of floats): The trajectory's last trajectory point with time, X, Y, Theta (s, m, m, rad).
             Returns:
               traj (list of lists): A list of trajectory points with time, X, Y, Theta (s, m, m, rad).
         """
-        self.fringe = []  # A LIST OF NODES
-        self.desired_state = desired_state
-        self.objects = objects
-        self.walls = walls
-        self.goal_found = False
+        self.chaser_state = chaser_state
+        self.evader_state = evader_state
         self.tree_roots = []
         self.open_set = []
-        self.grid = np.zeros((grid_size, grid_size))
+        self.path_found = False
 
         # initial path finding
-        # TODO: refactor into method, and add grid funtionality
-        initial_node = self.create_initial_node(initial_state)
-        children_list = self.get_children(initial_node)
         tree_count = 0
-        for child in children_list:
-            traj, traj_distance = construct_dubins_traj(initial_node.state, child.state)
-            if not collision_found(traj, self.objects, self.walls):
-                child.tree = tree_count
-                tree_count += 1
-                self.tree_roots.append(child.tree)
-                self.open_set.append(child)
+        node_list = self.get_available_nodes(evader_state)
 
-        # while loop until hunter is in open set
-        while not self.hunter_in_open_set():
-            # for node in self.open_set:
-            node_to_expand = self.get_highest_priority_node()
-            self.expand_nodes(node_to_expand)
+        for node in node_list:
+            if node.type = 'evader':
+                node.set_empty(None, evader_state, tree_count)
+                return self.build_traj(node)
+            node.set_empty(None, evader_state, tree_count)
+            self.tree_roots.append(node)
+            self.open_set.append(node)
+
+        while not self.path_found:
+            
+            if len(self.open_set) == 0:
+                print("Error: Initial path not found")
+
+            priority_node = self.get_highest_priority_node()
+            self.expand_node(priority_node)
+
+
 
         # loop to find goal
         while True:
@@ -95,12 +139,42 @@ class MTPP:
                 for child in children_list:
                     self.add_to_fringe(child)
 
+    def get_available_nodes(self, state_to_expand):
+        '''
+        returns list of nodes avalible for expansion
+        '''
+        node_list = []
+        for i in [1, 2]:
+            for delta in [self.DISTANCE_DELTA, -self.DISTANCE_DELTA]:
+                state = copy.deepcopy(state_to_expand)
+                state[i] = state[i] + delta
+                # checks for wall
+                if abs(state[i])>=N:
+                    break
+                # check for obstacles
+                node = self.grid[state[1],state[2]]
+                if node.type != 'obstacle':
+                    node_list.append(node)
+        return node_list
+    
     def get_highest_priority_node(self):
+        '''
+        "pops" a node from the open set based on priority
+        '''
+        list_min = min(self.open_set, key=operator.attrgetter('h_cost')) # TODO: check if we should use f_cost instead
+        priority_node = copy.deepcopy(list_min)
+        self.open_set.remove(list_min) 
+        return priority_node 
+    
+    def expand_node(self, node):
+        '''
+        expands node by adding appropriate nodes to the open and leaf set
+        '''
+        node_list = self.get_available_nodes(node.state)
+        for node in node_list:
+            if :#cost of surrounding node > cost of node + movemen
 
-        return Node()
 
-    def hunter_in_open_set(self):
-        pass
 
     def add_to_fringe(self, node):
         """
@@ -237,24 +311,38 @@ class MTPP:
     def build_subtrees(self):
         pass
 
+class CostClass:
+
+    def __init__(self, name, cost):
+        self.name = name
+        self.cost = cost
+
 
 if __name__ == '__main__':
-    for i in range(0, 5):
-        maxR = 10
-        tp0 = [0, -8, -8, 0]
-        tp1 = [300, random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0]
-        planner = MTPP()
-        walls = [[-maxR, maxR, maxR, maxR, 2 * maxR], [maxR, maxR, maxR, -maxR, 2 * maxR],
-                 [maxR, -maxR, -maxR, -maxR, 2 * maxR], [-maxR, -maxR, -maxR, maxR, 2 * maxR]]
-        num_objects = 25
-        grid_size = 10
-        objects = []
-        for j in range(0, num_objects):
-            obj = [random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0.5]
-            while (abs(obj[0] - tp0[1]) < 1 and abs(obj[1] - tp0[2]) < 1) or (
-                    abs(obj[0] - tp1[1]) < 1 and abs(obj[1] - tp1[2]) < 1):
-                obj = [random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0.5]
-            objects.append(obj)
-        traj = planner.construct_traj(tp0, tp1, objects, walls, grid_size)
-        if len(traj) > 0:
-            plot_traj(traj, traj, objects, walls)
+    # for i in range(0, 5):
+    planner = MTPP()
+    chaser_state = [0, -8, -8]
+    planner.grid[chaser_state[1], chaser_state[2]].set_chaser()
+    evader_state = [0, 8, 8]
+    planner.grid[evader_state[1], evader_state[2]].set_evader()
+    initial_path = planner.initial_path_finding(chaser_state, evader_state)
+
+
+    # maxR = 10
+    # tp1 = [300, random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0]
+    # walls = [[-maxR, maxR, maxR, maxR, 2 * maxR], [maxR, maxR, maxR, -maxR, 2 * maxR],
+    #             [maxR, -maxR, -maxR, -maxR, 2 * maxR], [-maxR, -maxR, -maxR, maxR, 2 * maxR]]
+    # objects = []
+    # num_objects = 25
+    # #TODO: add obstacles
+    # objects = []
+    # for j in range(0, num_objects):
+    #     obj = [random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0.5]
+    #     while (abs(obj[0] - tp0[1]) < 1 and abs(obj[1] - tp0[2]) < 1) or (
+    #             abs(obj[0] - tp1[1]) < 1 and abs(obj[1] - tp1[2]) < 1):
+    #         obj = [random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0.5]
+    #     objects.append(obj)
+    
+    if len(initial_path) > 0:
+        plot_initial_path()
+        #plot_traj(traj, traj, objects, walls)
