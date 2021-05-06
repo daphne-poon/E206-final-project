@@ -84,6 +84,11 @@ class Map:
                 for point in traj:
                     color_array[point[1]][point[2]] = 4
 
+            for level in self.grid:
+                for node in level:
+                    if node.type == 'evader':
+                        color_array[node.state[1]][node.state[2]] = node.get_color()
+
             # color_array_t = np.array(color_array).T.tolist()
             plt.imshow(color_array, cmap=self.cmap, origin='lower', interpolation='none', alpha=1,
                        extent=(0, self.N, 0, self.N), vmin=0, vmax=5)

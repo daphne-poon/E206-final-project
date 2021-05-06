@@ -48,6 +48,7 @@ class Environment():
             if self.target_is_reached():
                 print(f"CAUGHT evader {self.map.current_evader}")
                 self.map.dead_evaders.append(self.map.current_evader)
+                self.map.get_evader_node(self.map.current_evader).set_empty()
                 if len(self.map.dead_evaders) == self.NUM_EVADERS:
                     break
                 new_id = self.get_closest_evader()
@@ -123,11 +124,11 @@ if __name__ == '__main__':
         environment.map.grid[evader_state[1]][evader_state[2]].set_evader()
 
     # initialize obstacles
-    # random.seed(time.time())
-    # for _ in range(4 * environment.N):
-    #     rand_x = random.randint(0, environment.N - 1)
-    #     rand_y = random.randint(0, environment.N - 1)
-    #     if environment.map.grid[rand_x][rand_y].type == 'uninitialized':
-    #         environment.map.grid[rand_x][rand_y].set_obstacle()
+    random.seed(time.time())
+    for _ in range(4 * environment.N):
+        rand_x = random.randint(0, environment.N - 1)
+        rand_y = random.randint(0, environment.N - 1)
+        if environment.map.grid[rand_x][rand_y].type == 'uninitialized':
+            environment.map.grid[rand_x][rand_y].set_obstacle()
 
     environment.build_dynamic_path_to_targets()
