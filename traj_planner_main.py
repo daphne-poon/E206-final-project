@@ -12,7 +12,7 @@ from traj_planner_MTPP import MTPP
 
 class Environment():
     DIST_TO_GOAL_THRESHOLD = 0.5  # m
-    N = 20
+    N = 10
     NUM_EVADERS = 2  # ez
     GOAL_SWITCH_THRESHOLD = 0.5  # as a ratio of distance
     LARGE_NUMBER = 9999999
@@ -45,14 +45,17 @@ class Environment():
         while len(self.map.dead_evaders) < self.NUM_EVADERS:
             self.sync_maps()
 
-            ## MURDERED
             if self.target_is_reached():
                 print(f"CAUGHT evader {self.map.current_evader}")
                 self.map.dead_evaders.append(self.map.current_evader)
-                self.map.current_evader = self.get_closest_evader()
+                if len(self.map.dead_evaders) == self.NUM_EVADERS:
+                    break
+                new_id = self.get_closest_evader()
+                update_evader = True
                 self.map.show_current_grid()
+            else:
+                update_evader, new_id = self.update_evader()
 
-            update_evader, new_id = self.update_evader()
             if update_evader:
                 print(f"now tracking evader {new_id}")
                 self.map.current_evader = new_id
@@ -87,7 +90,8 @@ class Environment():
         chaser_node = self.map.get_chaser_node()
         current_evader = self.map.get_evader_node(self.map.current_evader)
         dist_to_curr_node = chaser_node.euclidean_distance_to_state(current_evader.state)
-        for node_id in range(self.NUM_EVADERS):
+        alive_evaders = [x for x in range(self.NUM_EVADERS) if x not in self.map.dead_evaders]
+        for node_id in alive_evaders:
             evader_node = self.map.get_evader_node(node_id)
             dist_to_node = chaser_node.euclidean_distance_to_state(evader_node.state)
             if dist_to_node <= (self.GOAL_SWITCH_THRESHOLD * dist_to_curr_node):
@@ -110,7 +114,7 @@ class Environment():
 
 if __name__ == '__main__':
     chaser_state = [0, 4, 2]
-    evader_states = [[0, 15, 18], [0, 11, 8]]
+    evader_states = [[0, 2, 3], [0, 6, 5]]
     environment = Environment(chaser_state, evader_states)
 
     # initialize chaser and evaders
@@ -119,11 +123,11 @@ if __name__ == '__main__':
         environment.map.grid[evader_state[1]][evader_state[2]].set_evader()
 
     # initialize obstacles
-    random.seed(time.time())
-    for _ in range(4 * environment.N):
-        rand_x = random.randint(0, environment.N - 1)
-        rand_y = random.randint(0, environment.N - 1)
-        if environment.map.grid[rand_x][rand_y].type == 'uninitialized':
-            environment.map.grid[rand_x][rand_y].set_obstacle()
+    # random.seed(time.time())
+    # for _ in range(4 * environment.N):
+    #     rand_x = random.randint(0, environment.N - 1)
+    #     rand_y = random.randint(0, environment.N - 1)
+    #     if environment.map.grid[rand_x][rand_y].type == 'uninitialized':
+    #         environment.map.grid[rand_x][rand_y].set_obstacle()
 
     environment.build_dynamic_path_to_targets()

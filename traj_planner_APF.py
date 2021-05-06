@@ -5,7 +5,7 @@ from APF_utilities import *
 import math
 import matplotlib.pyplot as plt
 
-class APFplanner():
+class APF_Planner():
 
   def __init__(self, map):
     self.sync_to_map(map)
@@ -57,7 +57,7 @@ class APFplanner():
   def repulsionForce(self, evader_state, chaser_state):
     k_rep = 200
     rho_0 = 10
-    rho_p = math.sqrt((evader_state[1] - chaser_state[1]))**2 + (evader_state[2] - chaser_state[2])**2)
+    rho_p = math.sqrt((evader_state[1] - chaser_state[1])**2 + (evader_state[2] - chaser_state[2])**2)
     x_rep = k_rep*((1/(rho_p))-(1/rho_0))*((evader_state[1] - chaser_state[1])/(rho_p))
     y_rep = k_rep*((1/(rho_p))-(1/rho_0))*((evader_state[2] - chaser_state[2])/(rho_p))
     return [x_rep, y_rep]

@@ -289,8 +289,9 @@ class MTPP:
                 nodes_updated.append(current_node)
 
     def update_evader_positions(self):
-        new_evader_states = []
-        for node_id in range(self.map.num_evaders):
+        new_evader_states = self.map.evader_states
+        alive_evaders = [x for x in range(self.map.num_evaders) if x not in self.map.dead_evaders]
+        for node_id in alive_evaders:
             evader_node = self.map.get_evader_node(node_id)
             node_list = self.get_neighboring_nodes(evader_node.state)
 
@@ -305,5 +306,5 @@ class MTPP:
                 evader_node.f_cost = self.LARGE_NUMBER
                 evader_node.f_cost = self.LARGE_NUMBER
 
-            new_evader_states.append(new_node.state)
+            new_evader_states[node_id] = new_node.state
         return new_evader_states
