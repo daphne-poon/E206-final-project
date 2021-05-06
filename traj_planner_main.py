@@ -3,6 +3,9 @@
 # Combined trajectory planner (evader and chaser)
 # Daphne Poon and Sabrina Shen
 import random
+
+from map import Map
+from node import Node
 import time
 from traj_planner_utils import *
 
@@ -20,10 +23,10 @@ class Environment():
     N = 20
     NUM_EVADERS = 1 # ez
 
-    def __init__(self):
+    def __init__(self, chaser_state, evader_state):
+        self.map = Map(self.N, self.NUM_EVADERS, chaser_state, evader_state)
         self.evader_planners = []
-        self.chaser_planner = MTPP(self.N, self.DIST_TO_GOAL_THRESHOLD)
-        self.grid = []
+        self.chaser_planner = MTPP(self.map)
         pass
 
     def initialize_evaders(self, num):
@@ -31,116 +34,60 @@ class Environment():
             self.evader_planners.append(APF_Planner())
         pass
 
-    def show_current_grid(self, traj=None, tree=False):
-        """ Plots the current state of the grid.
-            Arguments:
-              traj (list of lists): If not None, will plot the traj on top of the grid.
-        """
-        color_array = []
-        if tree:
-            for level in self.grid:
-                color_array_level = [node.get_tree() for node in level]
-                color_array.append(color_array_level)
-
-            viridis = cm.get_cmap('viridis', 256)
-            newcolors = viridis(np.linspace(0, 1, 256))
-            white = np.array([256 / 256, 256 / 256, 256 / 256, 1])
-            newcolors[:25, :] = white
-            newcmp = ListedColormap(newcolors)
-
-            plt.imshow(color_array, cmap=newcmp, origin='lower', interpolation='none', alpha=1,
-                       extent=(0, self.N, 0, self.N))
-        else:
-            for level in self.grid:
-                color_array_level = [node.get_color() for node in level]
-                color_array.append(color_array_level)
-
-            if traj is not None:
-                for point in traj:
-                    color_array[point[1]][point[2]] = 4
-
-            # color_array_t = np.array(color_array).T.tolist()
-            plt.imshow(color_array, cmap=cmap, origin='lower', interpolation='none', alpha=1,
-                       extent=(0, N, 0, N), vmin=0, vmax=5)
-            chaser_p = mpatches.Patch(color='red', label='Chaser')
-            evader_p = mpatches.Patch(color='blue', label='Evader')
-            obstacle_p = mpatches.Patch(color='black', label='Obstacle')
-            path_p = mpatches.Patch(color='yellow', label='Path')
-            plt.legend(handles=[chaser_p, evader_p, obstacle_p, path_p], loc='upper left')
-
-        # Make legend
-        major_ticks = np.arange(0, N + 1, 1)
-
-        plt.xticks(major_ticks)
-        plt.yticks(major_ticks)
-        plt.xlabel("X")
-        plt.ylabel("Y")
-        plt.grid(True, color='black', which='both')
-        plt.show()
-
-    def build_dynamic_path_to_target(self):
-        pass
-
     def target_is_reached(self):
-        evader_node = self.get_evader_node()
-        if evader_node.euclidean_distance_to_state(self.chaser_state) <= 1.5:
+        evader_node = self.map.get_evader_node()
+        if evader_node.euclidean_distance_to_state(self.map.chaser_state) <= 1.5:
             return True
         return False
 
-    def create_cmap(self):
-        """ Plots the current state of the grid.
-            Returns:
-              newcmp: A custom colormap.
-        """
-        viridis = cm.get_cmap('viridis', 256)
-        newcolors = viridis(np.linspace(0, 1, 256))
-        white = np.array([256 / 256, 256 / 256, 256 / 256, 1])
-        newcolors[:25, :] = white
-        red = np.array([256 / 256, 0 / 256, 0 / 256, 1])
-        newcolors[30:, :] = red
-        blue = np.array([0 / 256, 0 / 256, 256 / 256, 1])
-        newcolors[100:, :] = blue
-        black = np.array([0 / 256, 0 / 256, 0 / 256, 1])
-        newcolors[150:, :] = black
-        yellow = np.array([256 / 256, 256 / 256, 0 / 256, 1])
-        newcolors[200:, :] = yellow
-        newcmp = ListedColormap(newcolors)
-
-        return newcmp
-
-    def build_dynamic_path_to_target(self, chaser_state, evader_state):
-        _, discretized_path = self.initial_path_finding(chaser_state, evader_state)
-        self.show_current_grid(discretized_path)
-        self.show_current_grid(tree=True)
+    def build_dynamic_path_to_target(self):
+        self.sync_maps()
+        _, discretized_path = self.chaser_planner.initial_path_finding()
+        self.sync_maps(from_chaser=True)
+        self.map.show_current_grid(discretized_path)
+        self.map.show_current_grid(tree=True)
 
         while not self.target_is_reached():
-            self.chaser_state = self.update_chaser_position()
-            self.evader_state = self.update_evader_position()
-            _, discretized_path = self.correct_path()
-            self.show_current_grid(discretized_path)
-            self.show_current_grid(tree=True)
+            self.sync_maps()
+            self.map.chaser_state = self.chaser_planner.update_chaser_position()
+            self.map.evader_state = self.chaser_planner.update_evader_position()
+            self.sync_maps(from_chaser=True)
+            _, discretized_path = self.chaser_planner.correct_path()
+            self.sync_maps(from_chaser=True)
+            self.map.show_current_grid(discretized_path)
+            self.map.show_current_grid(tree=True)
 
         print("TARGET REACHED!!!!")
-        self.show_current_grid(discretized_path)
+        self.map.show_current_grid(discretized_path)
+
+    def sync_maps(self, from_chaser=False, from_evader=False):
+        if from_chaser:
+            self.map = self.chaser_planner.map
+            # self.evader_planners.map = self.chaser_planner.map
+        elif from_evader:
+            pass
+            # self.map = self.evader_planner.map
+            # self.chaser_planner.map = self.evader_planner.map
+        else:
+            self.chaser_planner.map = self.map
+            # self.evader_planner.map = self.map
 
 
 if __name__ == '__main__':
-    environment = Environment()
+    chaser_state = [0, 4, 2]
+    evader_state = [0, 15, 13]
+    environment = Environment(chaser_state, evader_state)
 
     # initialize chaser and evader
-    chaser_state = [0, 4, 2]
-    environment.chaser_planner.grid[chaser_state[1]][chaser_state[2]].set_chaser()
-    evader_state = [0, 15, 13]
-    environment.chaser_planner.grid[evader_state[1]][evader_state[2]].set_evader()
+    environment.map.grid[chaser_state[1]][chaser_state[2]].set_chaser()
+    environment.map.grid[evader_state[1]][evader_state[2]].set_evader()
 
     # initialize obstacles
     random.seed(time.time())
-    for _ in range(2 * environment.chaser_planner.N):
-        rand_x = random.randint(0, environment.chaser_planner.N - 1)
-        rand_y = random.randint(0, environment.chaser_planner.N - 1)
-        if environment.chaser_planner.grid[rand_x][rand_y].type == 'uninitialized':
-            environment.chaser_planner.grid[rand_x][rand_y].set_obstacle()
-
-    environment.show_current_grid()
+    for _ in range(2 * environment.N):
+        rand_x = random.randint(0, environment.N - 1)
+        rand_y = random.randint(0, environment.N - 1)
+        if environment.map.grid[rand_x][rand_y].type == 'uninitialized':
+            environment.map.grid[rand_x][rand_y].set_obstacle()
 
     environment.build_dynamic_path_to_target()
