@@ -81,9 +81,18 @@ def plot_traj(traj_desired, traj_actual, objects, walls):
     x_desired.append(tp[1])
     y_desired.append(tp[2])
     theta_desired.append(angle_diff(tp[3]))
-  axis_array[0].plot(x_desired, y_desired, 'b')
-  axis_array[0].plot(x_desired[0], y_desired[0], 'ko')
-  axis_array[0].plot(x_desired[-1], y_desired[-1], 'kx')
+
+  # TOCOPY
+  x_desired_shifted = [x + 0.5 for x in x_desired]
+  y_desired_shifted = [y + 0.5 for y in y_desired]
+
+  axis_array[0].plot(x_desired_shifted, y_desired_shifted, 'b')
+  axis_array[0].plot(x_desired_shifted[0], y_desired_shifted[0], 'ko')
+  axis_array[0].plot(x_desired_shifted[-1], y_desired_shifted[-1], 'kx')
+
+  # axis_array[0].plot(x_desired, y_desired, 'b')
+  # axis_array[0].plot(x_desired[0], y_desired[0], 'ko')
+  # axis_array[0].plot(x_desired[-1], y_desired[-1], 'kx')
   time_stamp_actual = []
   
   # x_actual = []

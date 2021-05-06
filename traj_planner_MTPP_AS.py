@@ -4,6 +4,8 @@
 # C Clark
 import copy
 import math
+import time
+
 import dubins
 import random
 import operator
@@ -19,6 +21,9 @@ import numpy as np
 class Node:
     LARGE_NUMBER = 9999999
 
+    def __repr__(self):
+        return f"[type: {self.type}, state: {self.state}, tree: {self.tree}, costs: {self.g_cost, self.h_cost}]"
+
     def __init__(self, state):
         '''
         state: array of state values, [time, x, y]
@@ -29,8 +34,9 @@ class Node:
         '''
         self.state = state
         self.parent_node = None
-        self.g_cost = 0
-        self.h_cost = 0
+        self.children_nodes = []
+        self.g_cost = self.LARGE_NUMBER
+        self.h_cost = self.LARGE_NUMBER
         self.f_cost = self.LARGE_NUMBER
         self.tree = None
         self.in_tree = False
@@ -53,14 +59,21 @@ class Node:
 
     def set_chaser(self):
         self.type = 'chaser'
+        # self.h_cost = 0
+        # self.f_cost = self.g_cost + self.h_cost
 
     def set_evader(self):
         self.type = 'evader'
+        # self.g_cost = 0
+        # self.f_cost = self.g_cost + self.h_cost
+
+    def is_obstacle(self):
+        return self.type == 'obstacle'
 
     def update_node(self, parent_node, chaser_state, tree):
         self.parent_node = parent_node
         if parent_node is not None:
-            self.g_cost = parent_node.g_cost + 1  # parent_node.manhattan_distance_to_state(self.state)
+            self.g_cost = parent_node.g_cost + 1
         else:
             self.g_cost = 1
         self.h_cost = self.euclidean_distance_to_state(chaser_state)
@@ -83,6 +96,12 @@ class Node:
         else:
             return 4
 
+    def get_tree(self):
+        if self.tree is None:
+            return 0
+        else:
+            return self.tree + 1
+
 
 class MTPP:
     DIST_TO_GOAL_THRESHOLD = 0.5  # m
@@ -95,70 +114,96 @@ class MTPP:
     def __init__(self):
         self.grid = self.contruct_grid()
         self.cmap = self.create_cmap()
+        self.chaser_state = []
+        self.evader_state = []
+        self.tree_roots = []
+        self.old_tree_roots = []
+        self.leaf_set = []
+        self.old_leaf_set = []
+        self.open_set = []
+        self.closed_set = []
 
     def contruct_grid(self):
-        '''
-        grid: empty NxN array of uninitialized nodes
-        '''
-        grid = [[Node([0, i, j]) for i in range(self.N)] for j in range(self.N)]
+        """ Construct a trajectory in the X-Y space and in the time-X,Y,Theta space.
+            Returns:
+              grid (list of lists): An empty NxN array of uninitialized nodes.
+        """
+        grid = [[Node([0, i, j]) for j in range(self.N)] for i in range(self.N)]
 
         return grid
 
     def initial_path_finding(self, chaser_state, evader_state):
         """ Construct a trajectory in the X-Y space and in the time-X,Y,Theta space.
             Arguments:
+              chaser_state (list): state of the chaser (time, X, Y).
+              evader_state (list): state of the evader (time, X, Y).
             Returns:
               traj (list of lists): A list of trajectory points with time, X, Y, Theta (s, m, m, rad).
+              discretized_traj (list of lists): A list of path points with time, X, Y (s, m, m).
         """
-        print(chaser_state)
+
         self.chaser_state = chaser_state
         self.evader_state = evader_state
-        self.tree_roots = []
-        self.open_set = []
-        self.leaf_set = []
-        self.path_found = False
 
-        # initial path finding
-        self.tree_count = 0
-        node_list = self.get_available_nodes(evader_state)
+        # Line 2
+        self.current_tree = 0
 
+        # Lines 3-12
+        node_list = self.get_neighboring_nodes(self.evader_state)
         for node in node_list:
-            if node.type == 'chaser':  # TODO: fix edgecase
-                node.update_node(None, chaser_state, self.tree_count)
-                self.open_set.clear()
-                return self.build_traj(node)
-
             node.set_empty()
-            node.update_node(None, chaser_state, self.tree_count)
+            node.update_node(None, chaser_state, self.current_tree)
             self.tree_roots.append(node)
+            print('adding to open set!!!')
             self.open_set.append(node)
-            self.tree_count += 1
+            self.current_tree += 1
 
-        while True:
+        # Lines 13-18
+        while not self.chaser_in_open_set():
+        # while True:
+        #     print(f"open sett is {self.open_set}")
             if len(self.open_set) == 0:
-                print("Error: Initial path not found")
+                print("Error: No path exists")
+                return RuntimeError
             priority_node = self.get_highest_priority_node()
-            self.tree_count = priority_node.tree
-            node = self.expand_node(priority_node)
-            if self.path_found:
-                self.open_set.clear()
-                return self.build_traj(node)
+            if priority_node.state[1:] == self.chaser_state[1:]:
+                break
+            # print(f'expanding node: {priority_node.state[1:]}')
+            self.expand_node(priority_node)
 
-    def get_available_nodes(self, state_to_expand):
-        '''
-        returns list of nodes avalible for expansion
-        '''
+        # Line 19
+        for open_node in self.open_set:
+            self.closed_set.append(open_node)
+
+        # Line 20
+        self.open_set.clear()
+
+        # Line 21
+        return self.build_traj_from_goal()
+
+    def get_neighboring_nodes(self, state_to_expand):
+        """ Returns all neighboring nodes of an input node, provided they are not obstacles.
+            Arguments:
+              state_to_expand (list): state of the node being expanded (time, X, Y).
+            Returns:
+              node_list (list of Nodes): A list of nodes we can expand to.
+        """
         node_list = []
         for i in [1, 2]:
             for delta in [self.DISTANCE_DELTA, -self.DISTANCE_DELTA]:
                 state = copy.deepcopy(state_to_expand)
                 state[i] = state[i] + delta
-                # checks for wall
-                if abs(state[i]) >= self.N:
-                    break
-                # check for obstacles
+
+                # checks for walls
+                if (state[i] >= self.N) or (state[i] < 0):
+                    continue
                 node = self.grid[int(state[1])][int(state[2])]
-                if node.type != 'obstacle':
+
+                if (not node.is_obstacle()) and (node.state[1:] != self.evader_state[1:]):
+                    # if (not node.is_obstacle()) and (node.state not in self.closed_set) and (
+                    #         node.state[1:] != self.evader_state[1:]):
+                    # if (not node.is_obstacle()) and (node.state not in self.closed_set) and (
+                    #         node.state[1:] != self.evader_state[1:]):
                     node_list.append(node)
         return node_list
 
@@ -166,55 +211,55 @@ class MTPP:
         '''
         "pops" a node from the open set based on priority
         '''
-        list_min = min(self.open_set, key=operator.attrgetter('f_cost'))  # TODO: check if we should use f_cost instead
-        priority_node = copy.deepcopy(list_min)
-        self.open_set.remove(list_min)
-        return priority_node
+        list_min = min(self.open_set, key=operator.attrgetter('h_cost'))
+        return list_min
 
     def expand_node(self, node_to_expand):
         '''
         expands node by adding appropriate nodes to the open and leaf set
         '''
-        node_list = self.get_available_nodes(node_to_expand.state)
+        node_list = self.get_neighboring_nodes(node_to_expand.state)
+        print(f'node list is {[x.state for x in node_list]}')
         for node in node_list:
-            temp_cost = node_to_expand.g_cost + node_to_expand.manhattan_distance_to_state(
-                node.state) + node.euclidean_distance_to_state(self.chaser_state)
-            if node.type == 'chaser':
-                print("found chaser at", node.state)
-                node.update_node(node_to_expand, self.chaser_state, self.tree_count)
-                self.path_found = True
-                return node
-            elif node.f_cost > temp_cost:
-                if node.type != 'evader':
+            if node.state == [0, 2, 4]:
+                print(f'current node is {node}!!!!!!!!')
+            temp_cost = node_to_expand.g_cost + 1
+
+            # Lines 3-12
+            if (node.g_cost > temp_cost) and (node_to_expand.parent_node != node):
+                if node.type == 'uninitialized':
                     node.set_empty()
-                node.update_node(node_to_expand, self.chaser_state, self.tree_count)
+                old_parent = node.parent_node
+                # print(f'we are expanding to the node {node.state} from {node_to_expand.state}')
+                if (old_parent is not None) and (old_parent != node_to_expand):
+                    # print(f'oldparent is {old_parent.state[1:]} with children {[x.state for x in old_parent.children_nodes]}')
+                    old_parent.children_nodes.remove(node)
+                node_to_expand.children_nodes.append(node)
+                node.update_node(node_to_expand, self.chaser_state, node_to_expand.tree)
                 self.open_set.append(node)
-                if node in (self.leaf_set):
+                if node in self.leaf_set:
                     self.leaf_set.remove(node)
-            if node.f_cost < temp_cost and node.tree != node_to_expand.tree:
-                self.leaf_set.append(node)
+
+            # Lines 13-17
+            if node.g_cost < temp_cost and node.tree != node_to_expand.tree:
+                # print("case 2")
+                if node not in self.leaf_set:
+                    self.leaf_set.append(node)
                 if node_to_expand not in self.leaf_set:
                     self.leaf_set.append(node_to_expand)
 
-    def calculate_edge_distance(self, state, parent_node: Node):
-        """
-        Determine the traj, traj_distance for an edge,
-        then check for collisions on traj with the collision_found function.
-        If one is found return a LARGE_NUMBER.
-        """
-        traj, traj_distance = construct_dubins_traj(parent_node.state, state)
-        if not collision_found(traj, self.objects, self.walls):
-            return parent_node.manhattan_distance_to_state(state)
+        # Lines 18-19
+        self.closed_set.append(node_to_expand)
+        self.open_set.remove(node_to_expand)
 
-        return MTPP.LARGE_NUMBER
+    def build_traj_from_goal(self):
+        goal_node = self.grid[self.chaser_state[1]][self.chaser_state[2]]
+        return self.build_traj(goal_node)
 
     def build_traj(self, goal_node):
-
         node_list = []
         node_to_add = goal_node
         while node_to_add != None:
-            print(
-                f'x: {node_to_add.state[1]}, y: {node_to_add.state[2]}, fcost: {node_to_add.f_cost}, gcost: {node_to_add.g_cost}, hcost: {node_to_add.h_cost}')
             node_list.insert(0, node_to_add)
             node_to_add = node_to_add.parent_node
 
@@ -225,6 +270,7 @@ class MTPP:
         parent_time = None
         traj_point_0 = [0, 0, 0, 0]
         traj_point_1 = [0, 0, 0, 0]
+
         for i in range(1, len(node_list)):
             node_A = node_list[i - 1]
             node_B = node_list[i]
@@ -254,37 +300,53 @@ class MTPP:
         traj, traj_distance = construct_dubins_traj(node_1.state, node_2.state)
         return collision_found(traj, self.objects, self.walls)
 
-    def show_current_grid(self, traj=None):
+    def show_current_grid(self, traj=None, tree=False):
         """ Plots the current state of the grid.
             Arguments:
               traj (list of lists): If not None, will plot the traj on top of the grid.
         """
 
         color_array = []
+        # TOCOPY
+        if tree:
+            for level in self.grid:
+                color_array_level = [node.get_tree() for node in level]
+                color_array.append(color_array_level)
 
-        for level in self.grid:
-            color_array_level = [node.get_color() for node in level]
-            color_array.append(color_array_level)
+            viridis = cm.get_cmap('viridis', 256)
+            newcolors = viridis(np.linspace(0, 1, 256))
+            white = np.array([256 / 256, 256 / 256, 256 / 256, 1])
+            newcolors[:25, :] = white
+            newcmp = ListedColormap(newcolors)
 
-        print(self.grid[1][1].type)
-        if traj is not None:
-            for point in traj:
-                color_array[point[1]][point[2]] = 4
+            plt.imshow(color_array, cmap=newcmp, origin='lower', interpolation='none', alpha=1,
+                       extent=(0, self.N, 0, self.N))
+        else:
+            for level in self.grid:
+                color_array_level = [node.get_color() for node in level]
+                color_array.append(color_array_level)
 
-        print(color_array)
-        plt.imshow(color_array, cmap=self.cmap, origin='lower', interpolation='none', alpha=1,
-                   extent=(0, self.N, 0, self.N), vmin=0, vmax=5)
-        major_ticks = np.arange(0, self.N + 1, 1)
+            if traj is not None:
+                for point in traj:
+                    color_array[point[1]][point[2]] = 4
+
+            # color_array_t = np.array(color_array).T.tolist()
+            plt.imshow(color_array, cmap=self.cmap, origin='lower', interpolation='none', alpha=1,
+                       extent=(0, self.N, 0, self.N), vmin=0, vmax=5)
+            chaser_p = mpatches.Patch(color='red', label='Chaser')
+            evader_p = mpatches.Patch(color='blue', label='Evader')
+            obstacle_p = mpatches.Patch(color='black', label='Obstacle')
+            path_p = mpatches.Patch(color='yellow', label='Path')
+            plt.legend(handles=[chaser_p, evader_p, obstacle_p, path_p], loc='upper left')
 
         # Make legend
-        chaser_p = mpatches.Patch(color='red', label='Chaser')
-        evader_p = mpatches.Patch(color='blue', label='Evader')
-        obstacle_p = mpatches.Patch(color='black', label='Obstacle')
-        path_p = mpatches.Patch(color='yellow', label='Path')
-        plt.legend(handles=[chaser_p, evader_p, obstacle_p, path_p], loc='upper left')
+        major_ticks = np.arange(0, self.N + 1, 1)
+
         plt.xticks(major_ticks)
         plt.yticks(major_ticks)
-        plt.grid(True, which='both')
+        plt.xlabel("X")
+        plt.ylabel("Y")
+        plt.grid(True, color='black', which='both')
         plt.show()
 
     def create_cmap(self):
@@ -300,48 +362,225 @@ class MTPP:
         newcolors[30:, :] = red
         blue = np.array([0 / 256, 0 / 256, 256 / 256, 1])
         newcolors[100:, :] = blue
+        black = np.array([0 / 256, 0 / 256, 0 / 256, 1])
+        newcolors[150:, :] = black
         yellow = np.array([256 / 256, 256 / 256, 0 / 256, 1])
         newcolors[200:, :] = yellow
         newcmp = ListedColormap(newcolors)
 
         return newcmp
 
+    def chaser_in_open_set(self):
+        chaser_node = self.grid[self.chaser_state[1]][self.chaser_state[2]]
+        return chaser_node in self.open_set
+
+    def build_dynamic_path_to_target(self, chaser_state, evader_state):
+        _, discretized_path = self.initial_path_finding(chaser_state, evader_state)
+        print(f'leaf set is {self.leaf_set}')
+        self.show_current_grid(discretized_path)
+        self.show_current_grid(tree=True)
+
+        while not self.target_is_reached():
+            print(f"OLD chaser/evader: {self.chaser_state, self.evader_state}")
+            self.chaser_state = self.update_chaser_position()
+            # if not self.chaser_state:
+            #     # we're done!
+            #     break
+            self.evader_state = self.update_evader_position()
+            print(f"NEW chaser/evader: {self.chaser_state, self.evader_state}")
+            _, discretized_path = self.correct_path()
+            # if self.target_is_reached():
+            #     break
+            self.show_current_grid(discretized_path)
+            print([[cell.tree for cell in row] for row in self.grid])
+            self.show_current_grid(tree=True)
+
+        print("TARGET REACHED!!!!")
+        self.show_current_grid(discretized_path)
+
+    def correct_path(self):
+        self.closed_set.clear()
+        self.open_set.clear()
+        self.old_tree_roots.clear()
+
+        # Line 3
+        for root in self.tree_roots:
+            self.old_tree_roots.append(root)
+
+        # Line 4
+        print("RESETTING OLD ROOTS\n")
+        for root_node in self.old_tree_roots:
+            root_node.g_cost = self.LARGE_NUMBER
+            root_node.h_cost = self.LARGE_NUMBER
+            root_node.f_cost = self.LARGE_NUMBER
+            print(f"resetting old root {root_node}")
+            # if root_node.state == [0, 2, 4]:
+            #     print(f"here at the initial evader, setting costs to inf")
+
+        # Line 5
+        # self.current_tree = 0
+
+        # Lines 6-15
+        node_list = self.get_neighboring_nodes(self.evader_state)
+        print(f"node list is {node_list}")
+
+        # TODO: double check
+        self.tree_roots.clear()
+        print("ADDING NEW ROOTS\n")
+        for node in node_list:
+            node.update_node(None, chaser_state, self.current_tree)
+            # if node.state == [0, 2, 4]:
+            #     print(f"updated node is {node}")
+            self.tree_roots.append(node)
+            self.open_set.append(node)
+            self.current_tree += 1
+            print(f"updated node is {node}")
+
+        # Lines 16-21
+        print("EXPANDING TO OLD ROOTS\n")
+        print(f"open set has size {len(self.open_set)}")
+        while not self.old_roots_in_open_set():
+            print("another iter")
+            if len(self.open_set) == 0:
+                print("open set is empty!")
+                break
+            priority_node = self.get_highest_priority_node()
+            print(f"expanding node {priority_node}")
+            self.expand_node(priority_node)
+
+        # Lines 22-26
+        print("UPDATING COSTS\n")
+        self.update_costs()
+
+        # Line 27
+        for open_node in self.open_set:
+            self.closed_set.append(open_node)
+
+        # Line 28
+        self.open_set.clear()
+
+        # Line 29
+        for leaf in self.leaf_set:
+            self.open_set.append(leaf)
+
+        # Line 30
+        self.leaf_set.clear()
+
+        print("LOOKING FOR CHASER NOW\n")
+        print(f'open set is {[x.state for x in self.open_set]}')
+        # Lines 31-36
+        if len(self.leaf_set) > 0:
+            while not self.chaser_in_open_set():
+                if len(self.open_set) == 0:
+                    break
+                priority_node = self.get_highest_priority_node()
+                # print(f'priority node is {priority_node.state}, with g_cost {priority_node.g_cost} and h_cost {priority_node.h_cost}')
+                self.expand_node(priority_node)
+
+
+
+        # Line 36
+        return self.build_traj_from_goal()
+
+    def update_evader_position(self):
+        evader_node = self.get_evader_node()
+        node_list = self.get_neighboring_nodes(self.evader_state)
+
+        if len(node_list) == 0:
+            print("Error: Evader is trapped!!!")
+            raise RuntimeError
+        else:
+            node_list[0].set_evader()
+            evader_node.set_empty()
+            evader_node.g_cost = self.LARGE_NUMBER
+            evader_node.f_cost = self.LARGE_NUMBER
+            evader_node.f_cost = self.LARGE_NUMBER
+
+        return node_list[0].state
+
+    def update_chaser_position(self):
+        chaser_node = self.get_chaser_node()
+        parent_node = chaser_node.parent_node
+
+        parent_node.set_chaser()
+        chaser_node.set_empty()
+
+        return parent_node.state
+
+    def target_is_reached(self):
+        chaser_node = self.get_chaser_node()
+        evader_node = self.get_evader_node()
+        if evader_node.manhattan_distance_to_node(chaser_node) <= 2:
+            return True
+        return False
+
+    def get_evader_node(self):
+        return self.grid[self.evader_state[1]][self.evader_state[2]]
+
+    def get_chaser_node(self):
+        return self.grid[self.chaser_state[1]][self.chaser_state[2]]
+
+    def old_roots_in_open_set(self):
+        for root in self.old_tree_roots:
+            if root not in self.open_set:
+                print("false :(")
+                return False
+
+        print("trueeee")
+        return True
+
+    def update_costs(self):
+        for root in self.old_tree_roots:
+            # print(f"FOR root at {root.state}")
+            root_cost = root.g_cost
+            # print(f"COST IS {root.g_cost}")
+            nodes_to_update = []
+            for node in root.children_nodes:
+                nodes_to_update.append(node)
+            nodes_updated = []
+            while len(nodes_to_update) > 0:
+                current_node = nodes_to_update[0]
+                current_node.g_cost = current_node.g_cost + root_cost
+                for child in current_node.children_nodes:
+                    if (child not in nodes_updated) and (child not in nodes_to_update):
+                        nodes_to_update.append(child)
+                nodes_to_update.remove(current_node)
+                nodes_updated.append(current_node)
+
 
 if __name__ == '__main__':
-    # for i in range(0, 5):
     planner = MTPP()
-    chaser_state = [0, 1, 1]
-    print(chaser_state[1], chaser_state[2])
+
+    # initialize chaser and evader
+    chaser_state = [0, 4, 0]
     planner.grid[chaser_state[1]][chaser_state[2]].set_chaser()
     evader_state = [0, 8, 8]
     planner.grid[evader_state[1]][evader_state[2]].set_evader()
-    # tp1 = [300, random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0]
 
-    # initial path finding
-    initial_path, discretized_path = planner.initial_path_finding(chaser_state, evader_state)
+    # initialize obstacles
+    # random.seed(time.time())
+    # for _ in range(2 * planner.N):
+    #     rand_x = random.randint(0, planner.N - 1)
+    #     rand_y = random.randint(0, planner.N - 1)
+    #     if planner.grid[rand_x][rand_y].type == 'uninitialized':
+    #         planner.grid[rand_x][rand_y].set_obstacle()
 
-    maxR = 10
-    walls = [[-maxR, maxR, maxR, maxR, 2 * maxR], [maxR, maxR, maxR, -maxR, 2 * maxR],
-             [maxR, -maxR, -maxR, -maxR, 2 * maxR], [-maxR, -maxR, -maxR, maxR, 2 * maxR]]
+    # show the current environment
+    planner.show_current_grid()
 
-    objects = []
-    # if len(initial_path) > 0:
-    # plot_traj(initial_path, initial_path, objects, walls)
-    # print(discretized_path)
-    planner.show_current_grid(discretized_path)
-    # begin moving robot
+    planner.build_dynamic_path_to_target(chaser_state, evader_state)
+    #
+    # # initial path finding
+    # initial_path, discretized_path = planner.initial_path_finding(chaser_state, evader_state)
+    #
+    # # plots
+    # planner.show_current_grid(discretized_path)
+    # planner.show_current_grid(tree=True)
 
+    # trajectory plotting
+    # maxR = planner.N
+    # walls = [[0, maxR, maxR, maxR, maxR], [maxR, maxR, maxR, 0, maxR],
+    #          [maxR, 0, 0, 0, maxR], [0, 0, 0, maxR, maxR]]
     # objects = []
-    # num_objects = 25
-    # #TODO: add obstacles
-
-    # for j in range(0, num_objects):
-    #     obj = [random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0.5]
-    #     while (abs(obj[0] - tp0[1]) < 1 and abs(obj[1] - tp0[2]) < 1) or (
-    #             abs(obj[0] - tp1[1]) < 1 and abs(obj[1] - tp1[2]) < 1):
-    #         obj = [random.uniform(-maxR + 1, maxR - 1), random.uniform(-maxR + 1, maxR - 1), 0.5]
-    #     objects.append(obj)
-
     # if len(initial_path) > 0:
-    #     plot_initial_path(traj, traj, objects, walls)
-    #     #plot_traj(traj, traj, objects, walls)
+    #     plot_traj(initial_path, initial_path, objects, walls)
