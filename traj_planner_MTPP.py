@@ -4,15 +4,14 @@
 # C Clark
 import copy
 import operator
+import random
 
-from map import Map
 from traj_planner_utils import *
 
 
 class MTPP:
     DISTANCE_DELTA = 1  # m
     LARGE_NUMBER = 9999999
-    GOAL_SWITCH_THRESHOLD = 0.5 # as a ratio of distance
 
     def __init__(self, initial_map):
         self.map = initial_map
@@ -21,9 +20,9 @@ class MTPP:
         self.tree_roots = []
         self.old_tree_roots = []
         self.leaf_set = []
-        self.old_leaf_set = []
         self.open_set = []
         self.closed_set = []
+        self.current_tree = 0
 
     def initial_path_finding(self):
         """ Construct a trajectory in the X-Y space and in the time-X,Y,Theta space.
@@ -35,16 +34,19 @@ class MTPP:
               discretized_traj (list of lists): A list of path points with time, X, Y (s, m, m).
         """
 
-        # self.chaser_state = chaser_state
-        # self.evader_state = evader_state
-
-        # Line 2
+        # Reinitialize run
         self.current_tree = 0
+        self.open_set.clear()
+        self.closed_set.clear()
+        self.leaf_set.clear()
+        self.tree_roots.clear()
+        self.old_tree_roots.clear()
 
         # Lines 3-12
-        node_list = self.get_neighboring_nodes(self.map.evader_state)
+        node_list = self.get_neighboring_nodes(self.map.evader_states[self.map.current_evader])
         for node in node_list:
-            node.set_empty()
+            if node.type == 'uninitialized':
+                node.set_empty()
             node.update_node(None, self.map.chaser_state, self.current_tree)
             self.tree_roots.append(node)
             self.open_set.append(node)
@@ -88,7 +90,7 @@ class MTPP:
                     continue
                 node = self.map.grid[int(state[1])][int(state[2])]
 
-                if (not node.is_obstacle()) and (node.state[1:] != self.map.evader_state[1:]):
+                if (not node.is_obstacle()) and (node.state[1:] != self.map.evader_states[self.map.current_evader][1:]):
                     node_list.append(node)
         return node_list
 
@@ -164,21 +166,6 @@ class MTPP:
             discretized_traj = discretized_traj + [node_list[i].state]
         return traj, discretized_traj
 
-        # TODO: add final step to evader
-
-    # def collision_found(self, node_1, node_2):
-    #     """ Return true if there is a collision with the traj between 2 nodes and the workspace
-    #         Arguments:
-    #           node_1 (Node): A node with the first state of the traj - Time, X, Y, Theta (s, m, m, rad).
-    #           node_2 (Node): A node with the second state of the traj - Time, X, Y, Theta (s, m, m, rad).
-    #           objects (list of lists): A list of object states - X, Y, radius (m, m, m).
-    #           walls (list of lists): A list of walls defined by end points - X0, Y0, X1, Y1, length (m, m, m, m, m).
-    #         Returns:
-    #           collision_found (boolean): True if there is a collision.
-    #     """
-    #     traj, traj_distance = construct_dubins_traj(node_1.state, node_2.state)
-    #     return collision_found(traj, self.objects, self.walls)
-
     def chaser_in_open_set(self):
         chaser_node = self.map.get_chaser_node()
         return chaser_node in self.open_set
@@ -203,7 +190,7 @@ class MTPP:
         # self.current_tree = 0
 
         # Lines 6-15
-        node_list = self.get_neighboring_nodes(self.map.evader_state)
+        node_list = self.get_neighboring_nodes(self.map.evader_states[self.map.current_evader])
 
         self.tree_roots.clear()
         print("ADDING NEW ROOTS\n")
@@ -252,21 +239,22 @@ class MTPP:
         # Line 36
         return self.build_traj_from_goal()
 
-    def update_evader_position(self):
-        evader_node = self.map.get_evader_node()
-        node_list = self.get_neighboring_nodes(self.map.evader_state)
+    def update_evader_position(self, node_id=0):
+        evader_node = self.map.get_evader_node(node_id)
+        node_list = self.get_neighboring_nodes(self.map.evader_states[self.map.current_evader])
 
         if len(node_list) == 0:
             print("Error: Evader is trapped!!!")
             raise RuntimeError
         else:
-            node_list[0].set_evader()
+            new_node = random.choice(node_list)
+            new_node.set_evader()
             evader_node.set_empty()
             evader_node.g_cost = self.LARGE_NUMBER
             evader_node.f_cost = self.LARGE_NUMBER
             evader_node.f_cost = self.LARGE_NUMBER
 
-        return node_list[0].state
+        return new_node.state
 
     def update_chaser_position(self):
         chaser_node = self.map.get_chaser_node()
@@ -300,34 +288,22 @@ class MTPP:
                 nodes_to_update.remove(current_node)
                 nodes_updated.append(current_node)
 
+    def update_evader_positions(self):
+        new_evader_states = []
+        for node_id in range(self.map.num_evaders):
+            evader_node = self.map.get_evader_node(node_id)
+            node_list = self.get_neighboring_nodes(evader_node.state)
 
-if __name__ == '__main__':
-    map_init = Map(10, 1, [0, 4, 2], [0, 7, 8])
-    planner = MTPP(map_init)
+            if len(node_list) == 0:
+                print("Error: Evader is trapped!!!")
+                raise RuntimeError
+            else:
+                new_node = random.choice(node_list)
+                new_node.set_evader()
+                evader_node.set_empty()
+                evader_node.g_cost = self.LARGE_NUMBER
+                evader_node.f_cost = self.LARGE_NUMBER
+                evader_node.f_cost = self.LARGE_NUMBER
 
-    # initialize chaser and evader
-    # chaser_state = [0, 4, 2]
-    # planner.grid[chaser_state[1]][chaser_state[2]].set_chaser()
-    # # evader_state = [0, 7, 8]
-    # planner.grid[evader_state[1]][evader_state[2]].set_evader()
-
-    # initialize obstacles
-    # random.seed(time.time())
-    # for _ in range(2 * planner.N):
-    #     rand_x = random.randint(0, planner.N - 1)
-    #     rand_y = random.randint(0, planner.N - 1)
-    #     if planner.grid[rand_x][rand_y].type == 'uninitialized':
-    #         planner.grid[rand_x][rand_y].set_obstacle()
-
-    # show the current environment
-    # planner.show_current_grid()
-
-    # planner.build_dynamic_path_to_target(chaser_state, evader_state)
-
-    # trajectory plotting
-    # maxR = planner.N
-    # walls = [[0, maxR, maxR, maxR, maxR], [maxR, maxR, maxR, 0, maxR],
-    #          [maxR, 0, 0, 0, maxR], [0, 0, 0, maxR, maxR]]
-    # objects = []
-    # if len(initial_path) > 0:
-    #     plot_traj(initial_path, initial_path, objects, walls)
+            new_evader_states.append(new_node.state)
+        return new_evader_states

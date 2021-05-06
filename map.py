@@ -7,15 +7,18 @@ from matplotlib.colors import ListedColormap
 from node import Node
 from traj_planner_utils import *
 
+
 class Map:
 
-    def __init__(self, N, num_evaders, chaser_state, evader_state):
+    def __init__(self, N, num_evaders, chaser_state, evader_states):
         self.N = N
         self.contruct_grid()
         self.chaser_state = chaser_state
-        self.evader_state = evader_state
+        self.evader_states = evader_states
         self.num_evaders = num_evaders
         self.cmap = self.create_cmap()
+        self.current_evader = 0  # the current evader we are trying to "catch"
+        self.dead_evaders = []  # list of evaders that have already been caught
 
     def contruct_grid(self):
         """ Construct a trajectory in the X-Y space and in the time-X,Y,Theta space.
@@ -24,8 +27,8 @@ class Map:
         """
         self.grid = [[Node([0, i, j]) for j in range(self.N)] for i in range(self.N)]
 
-    def get_evader_node(self):
-        return self.grid[self.evader_state[1]][self.evader_state[2]]
+    def get_evader_node(self, id=0):
+        return self.grid[self.evader_states[id][1]][self.evader_states[id][2]]
 
     def get_chaser_node(self):
         return self.grid[self.chaser_state[1]][self.chaser_state[2]]
