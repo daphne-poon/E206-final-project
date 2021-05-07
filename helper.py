@@ -14,7 +14,7 @@ def clear_dir(dir):
 
 def make_video():
     img_array = []
-    for filename in sorted(glob.glob('./images_1/*.png')):
+    for filename in sorted(glob.glob('./images/*.png')):
         img = cv2.imread(filename)
         height, width, layers = img.shape
         size = (width,height)

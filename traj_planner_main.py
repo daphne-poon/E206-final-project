@@ -59,6 +59,7 @@ class Environment():
             self.sync_maps(from_chaser=True)
 
             self.map.show_current_grid(tree=True)
+            self.map.show_current_grid(traj = discretized_path, tree=False)
 
             if self.target_is_reached():
                 self.sync_maps(from_chaser=True)

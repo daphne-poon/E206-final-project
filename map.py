@@ -15,7 +15,10 @@ class Map:
         self.N = N
         self.contruct_grid()
         self.chaser_state = chaser_state
+        self.grid[self.chaser_state[1]][self.chaser_state[2]].set_chaser()
         self.evader_states = evader_states
+        for evader_state in evader_states:
+            self.grid[evader_state[1]][evader_state[2]].set_evader()
         self.num_evaders = num_evaders
         self.obstacles = []
         self.cmap = self.create_cmap()
@@ -109,8 +112,12 @@ class Map:
         plt.ylabel("Y")
         plt.grid(True, color='black', which='both')
         if save:
-            plt.savefig('./images/'+str(time.time())+'.png')
-        plt.show()
+            if tree:
+                plt.savefig('./images_tree/'+str(time.time())+'.png')
+            else:
+                plt.savefig('./images/'+str(time.time())+'.png')
+        
+        #plt.show()
         
 
     def add_obstacles(self, obstacles):
