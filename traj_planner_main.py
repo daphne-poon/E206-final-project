@@ -10,6 +10,7 @@ from map import Map
 from traj_planner_APF import APF_Planner
 from traj_planner_MTPP import MTPP
 
+
 def timer(func):
     @functools.wraps(func)
     def wrapper_timer(*args, **kwargs):
@@ -22,19 +23,20 @@ def timer(func):
 
     return wrapper_timer
 
+
 class Environment():
     DIST_TO_GOAL_THRESHOLD = 0.5  # m
-    N = 10
-    num_evaders = 3  # ez
+    # N = 20
+    # num_evaders = 3  # ez
     GOAL_SWITCH_THRESHOLD = 0.5  # as a ratio of distance
     LARGE_NUMBER = 9999999
 
     def __init__(self, chaser_state, evader_states, num_evaders, N):
+        self.N = N
+        self.num_evaders = num_evaders
         self.map = Map(self.N, self.num_evaders, chaser_state, evader_states)
         self.chaser_planner = MTPP(self.map)
         self.evader_planner = APF_Planner(self.map)
-        self.N = N
-        self.num_evaders = num_evaders
 
 
     def target_is_reached(self):
@@ -46,7 +48,7 @@ class Environment():
 
     @timer
     def build_dynamic_path_to_targets(self):
-
+        self.map.show_current_grid()
         while self.num_evaders > 0:
 
             self.reset_maps()
@@ -56,7 +58,7 @@ class Environment():
             _, discretized_path = self.chaser_planner.initial_path_finding()
             self.sync_maps(from_chaser=True)
 
-            # self.map.show_current_grid(discretized_path)
+            self.map.show_current_grid(tree=True)
 
             if self.target_is_reached():
                 self.sync_maps(from_chaser=True)
@@ -85,7 +87,7 @@ class Environment():
                     _, discretized_path = self.chaser_planner.correct_path()
                     self.sync_maps(from_chaser=True)
 
-            self.map.show_current_grid(discretized_path)
+            # self.map.show_current_grid(discretized_path)
             # self.map.show_current_grid(tree=True)
 
         # self.map.show_current_grid(discretized_path)
@@ -150,23 +152,33 @@ class Environment():
 
 if __name__ == '__main__':
     # init environment
-    chaser_state = [0, 4, 2]
-    evader_states = [[0, 2, 3], [0, 6, 5], [0, 5, 8]]
-    environment = Environment(chaser_state, evader_states, 3, 10)
+    N = 20
 
-    # initialize obstacles
-    random.seed(time.time())
-    obstacles = []
-    for _ in range(2 * environment.N):
-        rand_x = random.randint(0, environment.N - 1)
-        rand_y = random.randint(0, environment.N - 1)
-        if environment.map.grid[rand_x][rand_y].type == 'uninitialized':
-            obstacles.append([rand_x, rand_y])
-    environment.map.add_obstacles(obstacles)
+    # environment = Environment(chaser_state, evader_states, 3, 10)
+    for _ in range(20):
+        chaser_state = [0, 1, 2]
+        evader_states = []
+        for _ in range(3):
+            rand_x = random.randint(0, N - 1)
+            rand_y = random.randint(0, N - 1)
+            if [rand_x, rand_y] != [1, 2]:
+                evader_states.append([0, rand_x, rand_y])
+        # print(f'evader states {evader_states}')
+        # evader_states = [[0, 12, 3], [0, 6, 5], [0, 5, 8]]
+        environment = Environment(chaser_state, evader_states, 3, N)
+        # initialize obstacles
+        random.seed(time.time())
+        obstacles = []
+        for _ in range(int(0.2 * environment.N ** 2)):
+            rand_x = random.randint(0, environment.N - 1)
+            rand_y = random.randint(0, environment.N - 1)
+            if environment.map.grid[rand_x][rand_y].type == 'uninitialized':
+                obstacles.append([rand_x, rand_y])
+        environment.map.add_obstacles(obstacles)
 
-    # initialize chaser and evaders
-    environment.map.grid[chaser_state[1]][chaser_state[2]].set_chaser()
-    for evader_state in evader_states:
-        environment.map.grid[evader_state[1]][evader_state[2]].set_evader()
+        # initialize chaser and evaders
+        environment.map.grid[chaser_state[1]][chaser_state[2]].set_chaser()
+        for evader_state in evader_states:
+            environment.map.grid[evader_state[1]][evader_state[2]].set_evader()
 
-    environment.build_dynamic_path_to_targets()
+        environment.build_dynamic_path_to_targets()
