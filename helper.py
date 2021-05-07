@@ -12,7 +12,7 @@ def clear_dir(dir):
         os.remove(os.path.join(dir, f))
 
 
-def make_vide():
+def make_video():
     img_array = []
     for filename in sorted(glob.glob('./images_1/*.png')):
         img = cv2.imread(filename)
@@ -29,4 +29,4 @@ def make_vide():
 
 if __name__ == '__main__':
     #clear_dir('./images')
-    make_vide()
+    make_video()
