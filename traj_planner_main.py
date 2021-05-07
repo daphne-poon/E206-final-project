@@ -12,21 +12,16 @@ from traj_planner_MTPP import MTPP
 
 class Environment():
     DIST_TO_GOAL_THRESHOLD = 0.5  # m
-    N = 10
+    N = 20
     NUM_EVADERS = 2  # ez
     GOAL_SWITCH_THRESHOLD = 0.5  # as a ratio of distance
     LARGE_NUMBER = 9999999
 
     def __init__(self, chaser_state, evader_state):
         self.map = Map(self.N, self.NUM_EVADERS, chaser_state, evader_state)
-        self.evader_planners = []
         self.chaser_planner = MTPP(self.map)
-        pass
+        self.evader_planner = APF_Planner(self.map)
 
-    def initialize_evaders(self):
-        for _ in range(self.NUM_EVADERS):
-            self.evader_planners.append(APF_Planner())
-        pass
 
     def target_is_reached(self):
         evader_node = self.map.get_evader_node(self.map.current_evader)
@@ -65,7 +60,8 @@ class Environment():
             else:
                 print(f"tracking same evader as before: {self.map.current_evader}")
                 self.map.chaser_state = self.chaser_planner.update_chaser_position()
-                self.map.evader_states = self.chaser_planner.update_evader_positions()
+                # TODO: check syncing
+                self.map.evader_states = self.evader_planner.update_evader_positions(self.map)
                 self.sync_maps(from_chaser=True)
                 _, discretized_path = self.chaser_planner.correct_path()
                 self.sync_maps(from_chaser=True)
@@ -78,7 +74,7 @@ class Environment():
     def sync_maps(self, from_chaser=False, from_evader=False):
         if from_chaser:
             self.map = self.chaser_planner.map
-            # self.evader_planners.map = self.chaser_planner.map
+            # self.evader_planner.map = self.chaser_planner.map
         elif from_evader:
             pass
             # self.map = self.evader_planner.map
@@ -125,7 +121,7 @@ if __name__ == '__main__':
 
     # initialize obstacles
     random.seed(time.time())
-    for _ in range(4 * environment.N):
+    for _ in range(environment.N):
         rand_x = random.randint(0, environment.N - 1)
         rand_y = random.randint(0, environment.N - 1)
         if environment.map.grid[rand_x][rand_y].type == 'uninitialized':
