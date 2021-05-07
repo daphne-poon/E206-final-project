@@ -108,9 +108,10 @@ class Map:
         plt.xlabel("X")
         plt.ylabel("Y")
         plt.grid(True, color='black', which='both')
-        plt.show()
         if save:
-            plt.savefig('./images/'+str(time.time)+'.png')
+            plt.savefig('./images/'+str(time.time())+'.png')
+        plt.show()
+        
 
     def add_obstacles(self, obstacles):
         self.obstacles = obstacles
