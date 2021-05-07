@@ -41,16 +41,22 @@ class MTPP:
         self.leaf_set.clear()
         self.tree_roots.clear()
         self.old_tree_roots.clear()
-        # for level in self.map.grid:
-        #     for node in level:
-        #         node.parent_node = None
-        #         node.children_nodes = []
-        #         node.tree = None
-        #         node.in_tree = False
-                # if node.type != 'chaser':
-                #     node.g_cost = self.LARGE_NUMBER
-                #     node.h_cost = self.LARGE_NUMBER
-                #     node.f_cost = self.LARGE_NUMBER
+        for level in self.map.grid:
+            for node in level:
+                node.parent_node = None
+                node.children_nodes = []
+                node.tree = None
+                node.in_tree = False
+                if node.type != 'chaser' and node.type != 'evader':
+                    node.g_cost = self.LARGE_NUMBER
+                    node.h_cost = self.LARGE_NUMBER
+                    node.f_cost = node.g_cost + node.h_cost
+                elif node.type == 'evader':
+                    node.g_cost = 0
+                    node.f_cost = node.g_cost + node.h_cost
+                elif node.type == 'chaser':
+                    node.h_cost = 0
+                    node.f_cost = node.g_cost + node.h_cost
 
 
         # Lines 3-12
@@ -69,9 +75,10 @@ class MTPP:
         # print(f'oepn set is {self.open_set}')
         while not self.chaser_in_open_set():
             if len(self.open_set) == 0:
-                # print("Error: No path exists")
+                print("Error: No path exists")
                 break
             priority_node = self.get_highest_priority_node()
+            # print(f"current node {priority_node}")
             if priority_node.state[1:] == self.map.chaser_state[1:]:
                 break
             self.expand_node(priority_node)
@@ -286,14 +293,19 @@ class MTPP:
 
         return new_node.state
 
-    def update_chaser_position(self):
+    def update_chaser_position(self, node=None):
         chaser_node = self.map.get_chaser_node()
-        parent_node = chaser_node.parent_node
+        # print(f'chaser at {chaser_node} with parent {chaser_node.parent_node}')
+        if node is not None:
+            node.set_chaser()
+            chaser_node.set_empty()
+            return node.state
+        else:
+            parent_node = chaser_node.parent_node
+            parent_node.set_chaser()
+            chaser_node.set_empty()
 
-        parent_node.set_chaser()
-        chaser_node.set_empty()
-
-        return parent_node.state
+            return parent_node.state
 
     def old_roots_in_open_set(self):
         for root in self.old_tree_roots:

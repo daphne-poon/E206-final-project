@@ -16,6 +16,7 @@ class Map:
         self.chaser_state = chaser_state
         self.evader_states = evader_states
         self.num_evaders = num_evaders
+        self.obstacles = []
         self.cmap = self.create_cmap()
         self.current_evader = 0  # the current evader we are trying to "catch"
         self.dead_evaders = []  # list of evaders that have already been caught
@@ -84,10 +85,10 @@ class Map:
                 for point in traj:
                     color_array[point[1]][point[2]] = 4
 
-            for level in self.grid:
-                for node in level:
-                    if node.type == 'evader':
-                        color_array[node.state[1]][node.state[2]] = node.get_color()
+            # for level in self.grid:
+            #     for node in level:
+            #         if node.type == 'evader':
+            #             color_array[node.state[1]][node.state[2]] = node.get_color()
 
             # color_array_t = np.array(color_array).T.tolist()
             plt.imshow(color_array, cmap=self.cmap, origin='lower', interpolation='none', alpha=1,
@@ -96,7 +97,7 @@ class Map:
             evader_p = mpatches.Patch(color='blue', label='Evader')
             obstacle_p = mpatches.Patch(color='black', label='Obstacle')
             path_p = mpatches.Patch(color='yellow', label='Path')
-            plt.legend(handles=[chaser_p, evader_p, obstacle_p, path_p], loc='upper left')
+            plt.legend(handles=[chaser_p, evader_p, obstacle_p, path_p], loc=(1.02, 0.5))
 
         # Make legend
         major_ticks = np.arange(0, self.N + 1, 1)
@@ -107,3 +108,9 @@ class Map:
         plt.ylabel("Y")
         plt.grid(True, color='black', which='both')
         plt.show()
+
+    def add_obstacles(self, obstacles):
+        self.obstacles = obstacles
+        for obstacle in self.obstacles:
+            self.grid[obstacle[0]][obstacle[1]].set_obstacle()
+        return
