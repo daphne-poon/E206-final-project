@@ -29,8 +29,8 @@ class Environment():
     GOAL_SWITCH_THRESHOLD = 0.5  # as a ratio of distance
     LARGE_NUMBER = 9999999
 
-    def __init__(self, chaser_state, evader_state, num_evaders, N):
-        self.map = Map(self.N, self.NUM_EVADERS, chaser_state, evader_state)
+    def __init__(self, chaser_state, evader_states, num_evaders, N):
+        self.map = Map(self.N, self.NUM_EVADERS, chaser_state, evader_states)
         self.chaser_planner = MTPP(self.map)
         self.evader_planner = APF_Planner(self.map)
         self.N = N

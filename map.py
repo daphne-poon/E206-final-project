@@ -3,6 +3,7 @@ import matplotlib.patches as mpatches
 import numpy as np
 from matplotlib import cm
 from matplotlib.colors import ListedColormap
+import time
 
 from node import Node
 from traj_planner_utils import *
@@ -56,7 +57,7 @@ class Map:
 
         return newcmp
 
-    def show_current_grid(self, traj=None, tree=False):
+    def show_current_grid(self, traj=None, tree=False, save = True):
         """ Plots the current state of the grid.
             Arguments:
               traj (list of lists): If not None, will plot the traj on top of the grid.
@@ -107,3 +108,6 @@ class Map:
         plt.ylabel("Y")
         plt.grid(True, color='black', which='both')
         plt.show()
+
+        if save:
+            plt.savefig('./images/'+str(time.time)+'.png')
