@@ -41,22 +41,36 @@ class MTPP:
         self.leaf_set.clear()
         self.tree_roots.clear()
         self.old_tree_roots.clear()
+        # for level in self.map.grid:
+        #     for node in level:
+        #         node.parent_node = None
+        #         node.children_nodes = []
+        #         node.tree = None
+        #         node.in_tree = False
+                # if node.type != 'chaser':
+                #     node.g_cost = self.LARGE_NUMBER
+                #     node.h_cost = self.LARGE_NUMBER
+                #     node.f_cost = self.LARGE_NUMBER
+
 
         # Lines 3-12
         node_list = self.get_neighboring_nodes(self.map.evader_states[self.map.current_evader])
+        # print(f'node list is {node_list}')
         for node in node_list:
             if node.type == 'uninitialized':
                 node.set_empty()
             node.update_node(None, self.map.chaser_state, self.current_tree)
             self.tree_roots.append(node)
             self.open_set.append(node)
+            # print(f'node is appeneded to open set {node}')
             self.current_tree += 1
 
         # Lines 13-18
+        # print(f'oepn set is {self.open_set}')
         while not self.chaser_in_open_set():
             if len(self.open_set) == 0:
-                print("Error: No path exists")
-                return RuntimeError
+                # print("Error: No path exists")
+                break
             priority_node = self.get_highest_priority_node()
             if priority_node.state[1:] == self.map.chaser_state[1:]:
                 break
@@ -119,6 +133,9 @@ class MTPP:
                 node_to_expand.children_nodes.append(node)
                 node.update_node(node_to_expand, self.map.chaser_state, node_to_expand.tree)
                 self.open_set.append(node)
+                if node.state in [x.state for x in self.old_tree_roots]:
+                    # print(f'saw {node.state}!!')
+                    self.seen_roots.append(node)
                 if node in self.leaf_set:
                     self.leaf_set.remove(node)
 
@@ -138,6 +155,7 @@ class MTPP:
         return self.build_traj(goal_node)
 
     def build_traj(self, goal_node):
+        # print(f"goal node is {goal_node}")
         node_list = []
         node_to_add = goal_node
         while node_to_add != None:
@@ -164,6 +182,9 @@ class MTPP:
             edge_traj, edge_traj_distance = construct_dubins_traj(traj_point_0, traj_point_1, parent_time=parent_time)
             traj = traj + edge_traj
             discretized_traj = discretized_traj + [node_list[i].state]
+
+        # print(f"traj is {traj}")
+        # print(f"disc is {discretized_traj}")
         return traj, discretized_traj
 
     def chaser_in_open_set(self):
@@ -180,7 +201,7 @@ class MTPP:
             self.old_tree_roots.append(root)
 
         # Line 4
-        print("RESETTING OLD ROOTS\n")
+        # print("RESETTING OLD ROOTS\n")
         for root_node in self.old_tree_roots:
             root_node.g_cost = self.LARGE_NUMBER
             root_node.h_cost = self.LARGE_NUMBER
@@ -193,24 +214,33 @@ class MTPP:
         node_list = self.get_neighboring_nodes(self.map.evader_states[self.map.current_evader])
 
         self.tree_roots.clear()
-        print("ADDING NEW ROOTS\n")
+        self.seen_roots = []
+        rr = [x.state for x in self.old_tree_roots]
+        # print(f'roots are: {rr}')
+        # print("ADDING NEW ROOTS\n")
         for node in node_list:
             node.update_node(None, self.map.chaser_state, self.current_tree)
+
+            if node.state in rr:
+                # print(f'saw {node.state}!!')
+                self.seen_roots.append(node)
             self.tree_roots.append(node)
             self.open_set.append(node)
             self.current_tree += 1
 
         # Lines 16-21
-        print("EXPANDING TO OLD ROOTS\n")
-        while not self.old_roots_in_open_set():
+        # print("EXPANDING TO OLD ROOTS\n")
+
+        while len(self.seen_roots) < len(self.old_tree_roots):
+            # print(f"open list is {self.open_set}")
             if len(self.open_set) == 0:
-                print("open set is empty!!!!")
+                # print("open set is empty!!!!")
                 break
             priority_node = self.get_highest_priority_node()
             self.expand_node(priority_node)
 
         # Lines 22-26
-        print("UPDATING COSTS\n")
+        # print("UPDATING COSTS\n")
         self.update_costs()
 
         # Line 27
@@ -227,7 +257,7 @@ class MTPP:
         # Line 30
         self.leaf_set.clear()
 
-        print("LOOKING FOR CHASER NOW\n")
+        # print("LOOKING FOR CHASER NOW\n")
         # Lines 31-36
         if len(self.leaf_set) > 0:
             while not self.chaser_in_open_set():
@@ -244,7 +274,7 @@ class MTPP:
         node_list = self.get_neighboring_nodes(self.map.evader_states[self.map.current_evader])
 
         if len(node_list) == 0:
-            print("Error: Evader is trapped!!!")
+            # print("Error: Evader is trapped!!!")
             raise RuntimeError
         else:
             new_node = random.choice(node_list)
@@ -296,8 +326,8 @@ class MTPP:
             node_list = self.get_neighboring_nodes(evader_node.state)
 
             if len(node_list) == 0:
-                print("Error: Evader is trapped!!!")
-                raise RuntimeError
+                # print("Error: Evader is trapped!!!")
+                return None
             else:
                 new_node = random.choice(node_list)
                 new_node.set_evader()
